@@ -1,54 +1,77 @@
 import tkinter as tk
 from tkinter import ttk
-from pytube import YouTube
+from yt_dlp import YoutubeDL
 from threading import Thread
 import time
 from tkinter import filedialog
 import os
+import sys
+
+# Function to get the directory where the script is located
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
+ffmpeg_path = resource_path("ffmpeg.exe")
 
 def verify_link():
     link = link_entry.get()
     try:
-        global yt
-        yt = YouTube(link, on_progress_callback=on_progress)
-        global filtered_streams
-        filtered_streams = [stream for stream in yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution')]
-        resolutions = [stream.resolution for stream in filtered_streams]
-        resolution_combobox.config(values=resolutions)
-        resolution_combobox.current(0)
-        download_button.config(state=tk.NORMAL) 
-        status_label.config(text="Link verified.")
+        ydl_opts = {
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]',
+            'noplaylist': True,
+            'ffmpeg_location': ffmpeg_path
+        }
+        with YoutubeDL(ydl_opts) as ydl:
+            global info
+            info = ydl.extract_info(link, download=False)
+            resolutions = sorted(set(f"{f['height']}p" for f in info['formats'] if 'height' in f))
+            resolution_combobox.config(values=resolutions)
+            resolution_combobox.current(0)
+            download_button.config(state=tk.NORMAL)
+            status_label.config(text="Link verified.")
     except Exception as e:
-        status_label.config(text=e)
+        status_label.config(text=str(e))
 
-def download_video(selected_stream):
-    current_time = str(int(time.time())) 
-    file_name = f"{yt.title} - {selected_stream.resolution} - {current_time}.mp4"
-    default_location = os.path.join(os.path.expanduser('~'), 'Downloads', file_name) 
-    file_path = filedialog.asksaveasfilename(initialfile=file_name, defaultextension=".mp4", initialdir=default_location)
-    if file_path:
-        selected_stream.download(output_path=os.path.dirname(file_path), filename=os.path.basename(file_path))
-        status_label.config(text="Download completed!")
-        progress_bar['value'] = 0
-        progress_label.config(text="")
-        download_another_button.config(state=tk.NORMAL)
+def download_video(selected_resolution):
+    try:
+        current_time = str(int(time.time()))
+        file_name = f"{info['title']} - {selected_resolution} - {current_time}.mp4"
+        default_location = os.path.join(os.path.expanduser('~'), 'Downloads')
+        file_path = filedialog.asksaveasfilename(initialfile=file_name, defaultextension=".mp4", initialdir=default_location)
+        
+        if file_path:
+            ydl_opts = {
+                'format': f"bestvideo[height={selected_resolution[:-1]}]+bestaudio/best[height={selected_resolution[:-1]}]",
+                'outtmpl': file_path,
+                'noplaylist': True,
+                'ffmpeg_location': ffmpeg_path,
+                'progress_hooks': [on_progress]
+            }
+            with YoutubeDL(ydl_opts) as ydl:
+                ydl.download([link_entry.get()])
+            status_label.config(text="Download completed!")
+            progress_bar['value'] = 0
+            progress_label.config(text="")
+            download_another_button.config(state=tk.NORMAL)
+    except Exception as e:
+        status_label.config(text=str(e))
 
-def on_progress(stream, chunk, bytes_remaining):
-    if yt and yt.streams:
-        total_size = stream.filesize
-        bytes_downloaded = total_size - bytes_remaining
-        percentage = (bytes_downloaded / total_size) * 100
+def on_progress(d):
+    if d['status'] == 'downloading':
+        total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
+        downloaded_bytes = d.get('downloaded_bytes', 0)
+        percentage = (downloaded_bytes / total_bytes) * 100 if total_bytes else 0
         progress_bar['value'] = percentage
         progress_label.config(text=f"{percentage:.2f}% Downloaded")
 
-
 def download_selected():
     selected_resolution = resolution_combobox.get()
-    selected_stream = next((stream for stream in filtered_streams if stream.resolution == selected_resolution), None)
-    if selected_stream:
+    if selected_resolution:
         status_label.config(text="Downloading...")
         global download_thread
-        download_thread = Thread(target=download_video, args=(selected_stream,))
+        download_thread = Thread(target=download_video, args=(selected_resolution,))
         download_thread.start()
     else:
         status_label.config(text="Invalid resolution selected.")

@@ -1,0 +1,5 @@
+build/
+dist/
+ffmpeg.spec
+ffmpeg.exe
+ytdl.spec
