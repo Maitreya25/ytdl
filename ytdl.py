@@ -19,7 +19,7 @@ def verify_link():
         download_button.config(state=tk.NORMAL) 
         status_label.config(text="Link verified.")
     except Exception as e:
-        status_label.config(text="Invalid link! Please enter a valid YouTube link.")
+        status_label.config(text=e)
 
 def download_video(selected_stream):
     current_time = str(int(time.time())) 
